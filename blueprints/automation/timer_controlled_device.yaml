@@ -1,0 +1,435 @@
+blueprint:
+  name: Timer Controlled Device
+  description: |
+    Version: 1.0 (2026-10-11)
+
+    A persistent timer helper drives one or more devices: devices are ON while the
+    timer runs and OFF when it stops. Anything can control the timer — buttons
+    (device triggers), time of day, presence, or any other trigger — and the timer
+    survives Home Assistant restarts.
+
+    **Requirements:** a Timer helper with **"Restore state" ticked**
+    (Settings → Devices & services → Helpers → Timer). Its own duration is unused.
+
+    **How triggers work:** every trigger section below takes ordinary triggers
+    (device / time / state / sun …). For a remote, add a *Device* trigger, pick the
+    remote and the press (e.g. `button_1_double`).
+
+    **Safety:** at startup and on an interval the devices are forced to match the
+    timer (e.g. a tap left on with no timer running gets turned off). Commands are only
+    sent when a device does not match, to keep Zigbee traffic down.
+  domain: automation
+  author: kevinwithnall
+  source_url: https://github.com/kevinwithnall/HomeAssistant/blob/main/blueprints/automation/timer_controlled_device.yaml
+  input:
+    timer_section:
+      name: Timer and devices
+      icon: mdi:timer-outline
+      input:
+        timer_entity:
+          name: Timer helper
+          description: Must have "Restore state" enabled so it survives restarts.
+          selector:
+            entity:
+              filter:
+                - domain: timer
+        target_entities:
+          name: Controlled devices
+          description: Turned ON while the timer runs, OFF when it stops.
+          selector:
+            entity:
+              multiple: true
+              filter:
+                - domain: [switch, light, fan, input_boolean]
+        start_actions:
+          name: Extra actions when the timer starts (optional)
+          description: Runs once when the timer goes from idle to running (e.g. set fan speed).
+          default: []
+          selector:
+            action: {}
+        stop_actions:
+          name: Extra actions when the timer stops (optional)
+          description: Runs once when the timer finishes or is stopped.
+          default: []
+          selector:
+            action: {}
+        paused_state:
+          name: Devices while paused
+          default: "off"
+          selector:
+            select:
+              options:
+                - label: Turn off while paused
+                  value: "off"
+                - label: Keep on while paused
+                  value: "on"
+
+    auto_section:
+      name: Automatic start (schedules, presence…)
+      icon: mdi:clock-start
+      collapsed: true
+      input:
+        auto_start_triggers:
+          name: Automatic start triggers
+          description: e.g. Time 20:00, sunset, presence detected. Starts/restarts the timer.
+          default: []
+          selector:
+            trigger: {}
+        auto_start_conditions:
+          name: Automatic start conditions (optional)
+          description: Only these automatic triggers check the conditions — buttons always work.
+          default: []
+          selector:
+            condition: {}
+        auto_start_duration:
+          name: Automatic start duration
+          default: {hours: 1, minutes: 0, seconds: 0}
+          selector:
+            duration: {}
+
+    button_section:
+      name: Button / manual control
+      icon: mdi:gesture-tap-button
+      collapsed: true
+      input:
+        start_a_triggers:
+          name: Start / restart — duration A
+          description: e.g. button single press. Pressing again resets to full time.
+          default: []
+          selector:
+            trigger: {}
+        start_a_duration:
+          name: Duration A
+          description: Also used by Toggle, Pause/resume (when idle) and manual switch-on.
+          default: {hours: 1, minutes: 0, seconds: 0}
+          selector:
+            duration: {}
+        start_b_triggers:
+          name: Start / restart — duration B
+          description: e.g. double press for a longer run.
+          default: []
+          selector:
+            trigger: {}
+        start_b_duration:
+          name: Duration B
+          default: {hours: 2, minutes: 0, seconds: 0}
+          selector:
+            duration: {}
+        start_c_triggers:
+          name: Start / restart — duration C
+          default: []
+          selector:
+            trigger: {}
+        start_c_duration:
+          name: Duration C
+          default: {hours: 3, minutes: 0, seconds: 0}
+          selector:
+            duration: {}
+        toggle_triggers:
+          name: Toggle
+          description: Starts (duration A) if idle, stops if running or paused.
+          default: []
+          selector:
+            trigger: {}
+        add_time_triggers:
+          name: Add time
+          description: Adds time to a running timer (starts it if idle).
+          default: []
+          selector:
+            trigger: {}
+        add_time_duration:
+          name: Time to add
+          default: {hours: 0, minutes: 30, seconds: 0}
+          selector:
+            duration: {}
+        pause_resume_triggers:
+          name: Pause / resume
+          description: Pauses a running timer, resumes a paused one, starts (duration A) if idle.
+          default: []
+          selector:
+            trigger: {}
+        stop_triggers:
+          name: Stop
+          description: Stops the timer and turns devices off (always, even if the timer is idle).
+          default: []
+          selector:
+            trigger: {}
+        follow_manual:
+          name: Follow manual switching
+          description: >-
+            ON: switching a device on manually starts the timer (duration A), switching it
+            off stops the timer. OFF: manual changes are reverted at the next safety check.
+          default: true
+          selector:
+            boolean: {}
+
+    safety_section:
+      name: Safety
+      icon: mdi:shield-check-outline
+      collapsed: true
+      input:
+        safety_check_enabled:
+          name: Periodic safety check
+          description: Regularly force devices to match the timer (recommended for taps/heaters).
+          default: true
+          selector:
+            boolean: {}
+        safety_check_interval:
+          name: Safety check interval
+          default: "/5"
+          selector:
+            select:
+              options:
+                - label: Every minute
+                  value: "/1"
+                - label: Every 5 minutes
+                  value: "/5"
+                - label: Every 10 minutes
+                  value: "/10"
+                - label: Every 15 minutes
+                  value: "/15"
+                - label: Every 30 minutes
+                  value: "/30"
+        max_on_time:
+          name: Maximum on time (optional)
+          description: >-
+            Hard cap checked by the safety check: a device on for longer than this is turned
+            off and the timer stopped, whatever the timer says. 0 = disabled.
+            (On-time restarts counting after a Home Assistant restart.)
+          default: {hours: 0, minutes: 0, seconds: 0}
+          selector:
+            duration: {}
+        safety_actions:
+          name: Alert actions (optional)
+          description: >-
+            Runs when the safety check or max-on-time had to correct something. The variable
+            `safety_message` holds a description, e.g. a notify action with
+            message "{{ safety_message }}".
+          default: []
+          selector:
+            action: {}
+
+mode: queued
+max: 10
+max_exceeded: silent
+
+variables:
+  timer_entity: !input timer_entity
+  target_entities: !input target_entities
+  paused_state: !input paused_state
+  follow_manual: !input follow_manual
+  safety_check_enabled: !input safety_check_enabled
+  # Raw duration inputs (dicts from the duration selector, or "H:MM:SS" strings in YAML)
+  d_auto: !input auto_start_duration
+  d_a: !input start_a_duration
+  d_b: !input start_b_duration
+  d_c: !input start_c_duration
+  d_add: !input add_time_duration
+  d_max: !input max_on_time
+  # Trigger groups, in the same order as in `triggers:` below (used to find which group fired)
+  g_auto: !input auto_start_triggers
+  g_a: !input start_a_triggers
+  g_b: !input start_b_triggers
+  g_c: !input start_c_triggers
+  g_toggle: !input toggle_triggers
+  g_add: !input add_time_triggers
+  g_pause: !input pause_resume_triggers
+  g_stop: !input stop_triggers
+
+triggers:
+  # Fixed triggers — idx 0..3. FIXED_COUNT in the actions must match this count.
+  - trigger: homeassistant
+    event: start
+  - trigger: state
+    entity_id: !input timer_entity
+    to: ~
+  - trigger: time_pattern
+    minutes: !input safety_check_interval
+  - trigger: state
+    entity_id: !input target_entities
+    from: ["on", "off"]
+    to: ["on", "off"]
+  # User trigger groups — HA flattens these in order; group sizes come from the inputs.
+  - triggers: !input auto_start_triggers
+  - triggers: !input start_a_triggers
+  - triggers: !input start_b_triggers
+  - triggers: !input start_c_triggers
+  - triggers: !input toggle_triggers
+  - triggers: !input add_time_triggers
+  - triggers: !input pause_resume_triggers
+  - triggers: !input stop_triggers
+
+actions:
+  # ---- Work out which trigger/group fired and convert durations to seconds ----
+  - variables:
+      group: >-
+        {% set i = trigger.idx | int %}
+        {% set fixed = ['hass_start', 'timer', 'safety', 'manual'] %}
+        {% if i < fixed | length %}{{ fixed[i] }}{% else %}
+          {% set ns = namespace(pos=fixed | length, g='unknown') %}
+          {% for name, n in [('auto', g_auto | length), ('start_a', g_a | length),
+              ('start_b', g_b | length), ('start_c', g_c | length),
+              ('toggle', g_toggle | length), ('add', g_add | length),
+              ('pause', g_pause | length), ('stop', g_stop | length)] %}
+            {% if ns.g == 'unknown' and i < ns.pos + n %}{% set ns.g = name %}{% endif %}
+            {% set ns.pos = ns.pos + n %}
+          {% endfor %}{{ ns.g }}
+        {% endif %}
+      secs: >-
+        {% set ns = namespace(out={}) %}
+        {% for k, d in [('auto', d_auto), ('a', d_a), ('b', d_b), ('c', d_c), ('add', d_add), ('max', d_max)] %}
+          {% if d is mapping %}
+            {% set s = (d.get('days', 0) | int) * 86400 + (d.get('hours', 0) | int) * 3600
+                     + (d.get('minutes', 0) | int) * 60 + (d.get('seconds', 0) | int) %}
+          {% else %}
+            {% set s = as_timedelta(d | string).total_seconds() | int if d else 0 %}
+          {% endif %}
+          {% set ns.out = dict(ns.out, **{k: s}) %}
+        {% endfor %}{{ ns.out }}
+      timer_state: "{{ states(timer_entity) }}"
+      remaining: >-
+        {% if timer_state == 'active' and state_attr(timer_entity, 'finishes_at') %}
+          {{ [ (as_datetime(state_attr(timer_entity, 'finishes_at')) - now()).total_seconds() | int, 0 ] | max }}
+        {% elif timer_state == 'paused' and state_attr(timer_entity, 'remaining') %}
+          {{ as_timedelta(state_attr(timer_entity, 'remaining')).total_seconds() | int }}
+        {% else %}0{% endif %}
+
+  # ---- 1. Commands: change the timer ----
+  - choose:
+      - conditions: "{{ group == 'auto' }}"
+        sequence:
+          - if: !input auto_start_conditions
+            then:
+              - action: timer.start
+                target: {entity_id: "{{ timer_entity }}"}
+                data: {duration: "{{ secs.auto }}"}
+      - conditions: "{{ group in ['start_a', 'start_b', 'start_c'] }}"
+        sequence:
+          - action: timer.start
+            target: {entity_id: "{{ timer_entity }}"}
+            data:
+              duration: "{{ secs[{'start_a': 'a', 'start_b': 'b', 'start_c': 'c'}[group]] }}"
+      - conditions: "{{ group == 'toggle' }}"
+        sequence:
+          - if: "{{ timer_state in ['active', 'paused'] }}"
+            then:
+              - action: timer.finish
+                target: {entity_id: "{{ timer_entity }}"}
+            else:
+              - action: timer.start
+                target: {entity_id: "{{ timer_entity }}"}
+                data: {duration: "{{ secs.a }}"}
+      - conditions: "{{ group == 'add' }}"
+        sequence:
+          # Restart with remaining + extra (timer.change cannot exceed the running duration)
+          - action: timer.start
+            target: {entity_id: "{{ timer_entity }}"}
+            data: {duration: "{{ remaining | int + secs.add }}"}
+      - conditions: "{{ group == 'pause' }}"
+        sequence:
+          - choose:
+              - conditions: "{{ timer_state == 'active' }}"
+                sequence:
+                  - action: timer.pause
+                    target: {entity_id: "{{ timer_entity }}"}
+              - conditions: "{{ timer_state == 'paused' }}"
+                sequence:
+                  - action: timer.start
+                    target: {entity_id: "{{ timer_entity }}"}
+            default:
+              - action: timer.start
+                target: {entity_id: "{{ timer_entity }}"}
+                data: {duration: "{{ secs.a }}"}
+      - conditions: "{{ group == 'stop' and timer_state in ['active', 'paused'] }}"
+        sequence:
+          - action: timer.finish
+            target: {entity_id: "{{ timer_entity }}"}
+      # Manual switching of a controlled device
+      - conditions: "{{ group == 'manual' and follow_manual }}"
+        sequence:
+          - choose:
+              - conditions: "{{ trigger.to_state.state == 'on' and timer_state == 'idle' }}"
+                sequence:
+                  - action: timer.start
+                    target: {entity_id: "{{ timer_entity }}"}
+                    data: {duration: "{{ secs.a }}"}
+              - conditions: "{{ trigger.to_state.state == 'on' and timer_state == 'paused' }}"
+                sequence:
+                  - action: timer.start
+                    target: {entity_id: "{{ timer_entity }}"}
+              - conditions: "{{ trigger.to_state.state == 'off' and timer_state in ['active', 'paused'] }}"
+                sequence:
+                  - action: timer.finish
+                    target: {entity_id: "{{ timer_entity }}"}
+      # Max on time (safety check only)
+      - conditions: >-
+          {{ group == 'safety' and safety_check_enabled and secs.max > 0 and
+             expand(target_entities) | selectattr('state', 'eq', 'on')
+               | selectattr('last_changed', 'lt', now() - timedelta(seconds=secs.max))
+               | list | length > 0 }}
+        sequence:
+          - variables:
+              safety_message: >-
+                {{ timer_entity }}: {{ expand(target_entities) | selectattr('state', 'eq', 'on')
+                   | map(attribute='name') | join(', ') }} on longer than max on time
+                ({{ secs.max // 60 }} min) — turned off.
+          - if: "{{ states(timer_entity) in ['active', 'paused'] }}"
+            then:
+              - action: timer.finish
+                target: {entity_id: "{{ timer_entity }}"}
+          - action: homeassistant.turn_off
+            target: {entity_id: "{{ target_entities }}"}
+          - choose:
+              - conditions: "{{ true }}"
+                sequence: !input safety_actions
+
+  # ---- 2. Sync devices to the (possibly just changed) timer ----
+  - variables:
+      timer_state: "{{ states(timer_entity) }}"
+      want_on: "{{ timer_state == 'active' or (timer_state == 'paused' and paused_state == 'on') }}"
+      need_on: "{{ target_entities | select('is_state', 'off') | list if want_on else [] }}"
+      need_off: "{{ [] if want_on else target_entities | select('is_state', 'on') | list }}"
+      skip_sync: >-
+        {{ (group == 'manual' and not follow_manual)
+           or (group == 'safety' and not safety_check_enabled) }}
+  - if: "{{ not skip_sync and need_on | length > 0 }}"
+    then:
+      - action: homeassistant.turn_on
+        target: {entity_id: "{{ need_on }}"}
+  - if: "{{ not skip_sync and need_off | length > 0 }}"
+    then:
+      - action: homeassistant.turn_off
+        target: {entity_id: "{{ need_off }}"}
+
+  # ---- 3. Start/stop extras and safety alerts ----
+  - choose:
+      - conditions: >-
+          {{ group == 'timer' and trigger.to_state is not none and trigger.from_state is not none
+             and trigger.from_state.state == 'idle' and trigger.to_state.state == 'active' }}
+        sequence: !input start_actions
+      - conditions: >-
+          {{ group == 'timer' and trigger.to_state is not none and trigger.from_state is not none
+             and trigger.from_state.state in ['active', 'paused'] and trigger.to_state.state == 'idle' }}
+        sequence: !input stop_actions
+      - conditions: >-
+          {{ group in ['safety', 'hass_start'] and not skip_sync
+             and (need_on | length + need_off | length) > 0 }}
+        sequence:
+          - variables:
+              safety_message: >-
+                {{ timer_entity }} is {{ timer_state }} but
+                {% if need_off | length %}{{ need_off | join(', ') }} {{ 'was' if need_off | length == 1 else 'were' }} on — turned off{% endif %}
+                {% if need_on | length %}{{ need_on | join(', ') }} {{ 'was' if need_on | length == 1 else 'were' }} off — turned on{% endif %}
+                ({{ 'startup check' if group == 'hass_start' else 'safety check' }}).
+          - choose:
+              - conditions: "{{ true }}"
+                sequence: !input safety_actions
+      - conditions: "{{ group == 'hass_start' and not state_attr(timer_entity, 'restore') }}"
+        sequence:
+          - action: system_log.write
+            data:
+              level: warning
+              logger: blueprint.timer_controlled_device
+              message: >-
+                {{ timer_entity }} does not have "Restore state" enabled — the timer will not
+                survive restarts. Edit the helper and tick Restore.
