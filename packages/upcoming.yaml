@@ -1,0 +1,98 @@
+# upcoming.yaml - "Upcoming" scheduled events (package).
+#
+# Each scheduled event is defined ONCE here as a timestamp sensor named sensor.upcoming_*.
+#  - The automation that does the work triggers on it:  trigger: time / at: sensor.upcoming_...
+#  - The "Upcoming" dashboard card lists every sensor.upcoming_* in time order, showing the
+#    `event` attribute — a new sensor here shows up there automatically.
+# Change an offset/threshold here only. Sun maths lives in custom_templates/upcoming.jinja.
+#
+# Master copy: GitHub kevinwithnall/HomeAssistant packages/upcoming.yaml
+# Deployed to: /config/packages/upcoming.yaml (needs `homeassistant: packages:` in configuration.yaml)
+
+template:
+  # Today's actual sunrise/sunset, stored when they happen, so "sunset + 20 min" stays exact
+  # after sun.sun has already moved on to tomorrow's next_setting. Restored across restarts.
+  - trigger:
+      - trigger: sun
+        event: sunset
+    sensor:
+      - name: Sun last sunset
+        unique_id: sun_last_sunset
+        device_class: timestamp
+        icon: mdi:weather-sunset-down
+        state: "{{ now().isoformat() }}"
+  - trigger:
+      - trigger: sun
+        event: sunrise
+    sensor:
+      - name: Sun last sunrise
+        unique_id: sun_last_sunrise
+        device_class: timestamp
+        icon: mdi:weather-sunset-up
+        state: "{{ now().isoformat() }}"
+
+  # Sun position scan is heavier, so recalculate every 5 minutes rather than every minute.
+  - trigger:
+      - trigger: homeassistant
+        event: start
+      - trigger: event
+        event_type: event_template_reloaded
+      - trigger: time_pattern
+        minutes: /5
+    sensor:
+      # Used by automation "Sun in window" (1737696710724)
+      - name: Upcoming kitchen blinds close
+        unique_id: upcoming_kitchen_blinds_close
+        device_class: timestamp
+        icon: mdi:blinds
+        state: >-
+          {% from 'upcoming.jinja' import next_sun_window %}
+          {{ next_sun_window(180, 350, 0, 60) or none }}
+        attributes:
+          event: Kitchen blinds close (sun in the window)
+
+  - sensor:
+      # Used by automation "Christmas LEDs" (1764493231757)
+      - name: Upcoming Christmas LEDs
+        unique_id: upcoming_christmas_leds
+        device_class: timestamp
+        icon: mdi:string-lights
+        state: >-
+          {% from 'upcoming.jinja' import next_sun_event %}
+          {{ next_sun_event('sunset', -25) }}
+        attributes:
+          event: Christmas LEDs on (sunset − 25 min)
+
+      # Used by automation "Night/Day Setting" (1750407090259) -> input_boolean.nighttime on,
+      # which runs "Sunset" 30 s later
+      - name: Upcoming night mode
+        unique_id: upcoming_night_mode
+        device_class: timestamp
+        icon: mdi:weather-night
+        state: >-
+          {% from 'upcoming.jinja' import next_sun_or_time %}
+          {{ next_sun_or_time('sunset', 20, '20:15') }}
+        attributes:
+          event: Night mode – blinds close, blankets & balcony LEDs on (sunset + 20 min, 20:15 latest)
+
+      # Used by automation "Night/Day Setting" (1750407090259) -> nighttime off -> "Sunrise"
+      - name: Upcoming day mode
+        unique_id: upcoming_day_mode
+        device_class: timestamp
+        icon: mdi:weather-sunny
+        state: >-
+          {% from 'upcoming.jinja' import next_sun_event %}
+          {{ next_sun_event('sunrise', -40) }}
+        attributes:
+          event: Day mode – kitchen, lounge & puzzle blinds open (sunrise − 40 min)
+
+      # Used by automation "Open Bedroom Blinds" (1737679816740)
+      - name: Upcoming bedroom blinds open
+        unique_id: upcoming_bedroom_blinds_open
+        device_class: timestamp
+        icon: mdi:blinds-open
+        state: >-
+          {% from 'upcoming.jinja' import next_time %}
+          {{ next_time('10:00') }}
+        attributes:
+          event: Bedroom blinds open

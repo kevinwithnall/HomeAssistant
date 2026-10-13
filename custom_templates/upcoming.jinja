@@ -1,0 +1,106 @@
+{#-
+  upcoming.jinja - shared macros for "Upcoming" scheduled-event sensors.
+
+  Each scheduled event is defined ONCE as a timestamp template sensor named
+  sensor.upcoming_* (see packages/upcoming.yaml). Automations trigger on that sensor
+  (trigger: time, at: sensor.upcoming_...) and the Upcoming dashboard card lists every
+  sensor.upcoming_* — so an event's offset/threshold lives in exactly one place.
+
+  Macros return ISO datetime strings (Jinja macros can only return text).
+-#}
+
+{#- Sunrise/sunset ("sunrise" | "sunset") on today (day=0), tomorrow (1) …, local time.
+    Uses sun.sun next_* for upcoming events and sensor.sun_last_<event> (stored at the
+    real event) for today's event once it has passed, so +offsets after sunset stay exact.
+    Days with neither value fall back to the nearest known event shifted by whole days
+    (~1-2 min off; only used for display until the real value is known). -#}
+{%- macro sun_on(event, day=0) -%}
+  {%- set nxt = as_datetime(state_attr('sun.sun', 'next_setting' if event == 'sunset' else 'next_rising')) | as_local -%}
+  {%- set last = states('sensor.sun_last_' ~ event) | as_datetime(none) -%}
+  {%- set d = (now() + timedelta(days=day | int)).date() -%}
+  {%- if nxt.date() == d -%}{{ nxt.isoformat() }}
+  {%- elif last is not none and (last | as_local).date() == d -%}{{ (last | as_local).isoformat() }}
+  {%- else -%}{{ (nxt + timedelta(days=(d - nxt.date()).days)).isoformat() }}
+  {%- endif -%}
+{%- endmacro -%}
+
+{#- Events stay current for GRACE after they pass, so a time trigger at that exact moment
+    can't race the sensor rolling over to the next occurrence. -#}
+{%- set GRACE = timedelta(minutes=1) -%}
+
+{#- Next time (after now - GRACE) of sunrise/sunset + minutes (negative = before). -#}
+{%- macro next_sun_event(event, minutes=0) -%}
+  {%- set ns = namespace(t=none) -%}
+  {%- for day in range(0, 3) if ns.t is none -%}
+    {%- set t = sun_on(event, day) | as_datetime + timedelta(minutes=minutes | float) -%}
+    {%- if t > now() - GRACE -%}{%- set ns.t = t -%}{%- endif -%}
+  {%- endfor -%}
+  {{ ns.t.isoformat() }}
+{%- endmacro -%}
+
+{#- Sun position at datetime t: "azimuth,elevation" in degrees (NOAA low-precision
+    formulas, within ~0.1° of HA's sun.sun). Uses zone.home coordinates. -#}
+{%- macro sun_position(t) -%}
+  {%- set rad = pi / 180 -%}
+  {%- set lat = state_attr('zone.home', 'latitude') * rad -%}
+  {%- set lon = state_attr('zone.home', 'longitude') -%}
+  {%- set n = as_timestamp(t) / 86400 + 2440587.5 - 2451545.0 -%}
+  {%- set L = (280.460 + 0.9856474 * n) % 360 -%}
+  {%- set g = ((357.528 + 0.9856003 * n) % 360) * rad -%}
+  {%- set lam = (L + 1.915 * sin(g) + 0.020 * sin(2 * g)) * rad -%}
+  {%- set eps = (23.439 - 0.0000004 * n) * rad -%}
+  {%- set ra = atan2(cos(eps) * sin(lam), cos(lam)) / rad -%}
+  {%- set dec = asin(sin(eps) * sin(lam)) -%}
+  {%- set gmst = (18.697374558 + 24.06570982441908 * n) % 24 -%}
+  {%- set h = ((gmst * 15 + lon - ra) % 360) * rad -%}
+  {%- set el = asin(sin(lat) * sin(dec) + cos(lat) * cos(dec) * cos(h)) / rad -%}
+  {%- set az = (atan2(sin(h), cos(h) * sin(lat) - tan(dec) * cos(lat)) / rad + 180) % 360 -%}
+  {{ az | round(2) }},{{ el | round(2) }}
+{%- endmacro -%}
+
+{#- True if the sun at t is inside the azimuth/elevation box (bounds exclusive, like
+    numeric_state above/below). -#}
+{%- macro sun_in_box(t, az_min, az_max, el_min, el_max) -%}
+  {%- set p = sun_position(t).split(',') | map('float') | list -%}
+  {{ az_min < p[0] < az_max and el_min < p[1] < el_max }}
+{%- endmacro -%}
+
+{#- Next time (after now - 2 min, within 2 days) the sun ENTERS the box. Scans in 10-minute
+    steps, then refines to the minute. -#}
+{%- macro next_sun_window(az_min, az_max, el_min, el_max) -%}
+  {%- set start = now().replace(second=0, microsecond=0) - GRACE - GRACE -%}
+  {%- set ns = namespace(prev=sun_in_box(start, az_min, az_max, el_min, el_max) == 'True', t=none) -%}
+  {%- for i in range(1, 289) if ns.t is none -%}
+    {%- set t = start + timedelta(minutes=10 * i) -%}
+    {%- set inside = sun_in_box(t, az_min, az_max, el_min, el_max) == 'True' -%}
+    {%- if inside and not ns.prev -%}
+      {%- set rf = namespace(t=t) -%}
+      {%- for m in range(9, 0, -1) -%}
+        {%- if sun_in_box(t - timedelta(minutes=m), az_min, az_max, el_min, el_max) == 'True' and rf.t == t -%}
+          {%- set rf.t = t - timedelta(minutes=m) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- set ns.t = rf.t -%}
+    {%- endif -%}
+    {%- set ns.prev = inside -%}
+  {%- endfor -%}
+  {{ ns.t.isoformat() if ns.t is not none else '' }}
+{%- endmacro -%}
+
+{#- Next occurrence (after now - GRACE) of a daily clock time "HH:MM[:SS]". -#}
+{%- macro next_time(hhmm) -%}
+  {%- set t = today_at(hhmm) -%}
+  {{ (t if t > now() - GRACE else t + timedelta(days=1)).isoformat() }}
+{%- endmacro -%}
+
+{#- Per day, the EARLIER of sunrise/sunset + minutes and a clock time (e.g. "sunset + 20,
+    but 20:15 at the latest"); returns the next such moment after now - GRACE. -#}
+{%- macro next_sun_or_time(event, minutes, hhmm) -%}
+  {%- set ns = namespace(t=none) -%}
+  {%- for day in range(0, 3) if ns.t is none -%}
+    {%- set t = [ sun_on(event, day) | as_datetime + timedelta(minutes=minutes | float),
+                  today_at(hhmm) + timedelta(days=day) ] | min -%}
+    {%- if t > now() - GRACE -%}{%- set ns.t = t -%}{%- endif -%}
+  {%- endfor -%}
+  {{ ns.t.isoformat() }}
+{%- endmacro -%}
