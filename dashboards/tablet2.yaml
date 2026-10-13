@@ -1,0 +1,425 @@
+# "tablet 2" dashboard (url /dashboard-tablet2) - single-page wall tablet layout.
+# Everything everyday is on one sections view; detail views open as Bubble Card
+# pop-ups (#weather, #charts, #tv) from the header badges and section headings.
+# `!file name.md` inlines a card body kept beside this file (shared with "tablet").
+# Deploy with scripts/deploy_dashboard.sh dashboards/tablet2.yaml
+dashboard:
+  url_path: dashboard-tablet2
+  title: tablet 2
+  icon: mdi:tablet-dashboard
+  require_admin: false
+  show_in_sidebar: true
+
+config:
+  wallpanel:
+    enabled: false
+    hide_toolbar: true
+    hide_sidebar: true
+    fullscreen: true
+    idle_time: 600
+    keep_screen_on_time: 0
+    camera_motion_detection_enabled: true
+    alert_errors: true
+    fade_in_time: 3
+    fade_out_time_screensaver_entity: 3
+    crossfade_time: 3
+    display_time: 30
+    screensaver_stop_navigation_path: /dashboard-tablet2/home?wp_enabled=true
+    camera_motion_detection_threshold: 5
+    camera_motion_detection_capture_visible: false
+
+  views:
+    - title: Home
+      path: home
+      icon: mdi:home
+      type: sections
+      max_columns: 3
+      dense_section_placement: true
+
+      # ---- Header: clock + date, quick-glance badges (tap for pop-ups) ----
+      header:
+        layout: responsive
+        badges_position: bottom
+        badges_wrap: wrap
+        card:
+          type: markdown
+          text_only: true
+          content: >-
+            # {{ now().strftime('%H:%M') }}
+
+            {{ now().strftime('%A %-d %B') }} ·
+            {{ 'Good morning' if now().hour < 12 else 'Good afternoon' if now().hour < 18 else 'Good evening' }}
+      badges:
+        - type: entity
+          entity: sensor.outside_temp_temperature
+          name: Outside
+          show_name: true
+          icon: mdi:thermometer
+          tap_action: {action: navigate, navigation_path: '#weather'}
+        - type: entity
+          entity: sensor.shell_cove_rain_chance_0
+          name: Rain today
+          show_name: true
+          icon: mdi:weather-rainy
+          tap_action: {action: navigate, navigation_path: '#weather'}
+        - type: entity
+          entity: sensor.kevin_home_load_power
+          name: House load
+          show_name: true
+          icon: mdi:home-lightning-bolt
+        - type: entity
+          entity: input_boolean.nighttime
+          name: Night mode
+          show_name: true
+          icon: mdi:weather-night
+        - type: entity
+          entity: media_player.fire_tv_192_168_5_74
+          name: TV
+          show_name: true
+          icon: mdi:television
+          tap_action: {action: navigate, navigation_path: '#tv'}
+
+      sections:
+        # ---- Today: forecast, scheduled events, good night ----
+        - type: grid
+          cards:
+            - type: heading
+              heading: Today
+              icon: mdi:calendar-today
+              badges:
+                - type: entity
+                  entity: weather.shell_cove
+                  name: Radar
+                  show_name: true
+                  show_state: false
+                  icon: mdi:radar
+                  tap_action: {action: navigate, navigation_path: '#weather'}
+            - type: weather-forecast
+              entity: weather.shell_cove
+              forecast_type: daily
+              show_current: true
+              show_forecast: true
+              tap_action: {action: navigate, navigation_path: '#weather'}
+            - type: tile
+              entity: input_button.good_night
+              name: Good night
+              icon: mdi:weather-night
+              color: indigo
+              hide_state: true
+              vertical: true
+              grid_options: {columns: 12, rows: 2}
+              tap_action:
+                action: perform-action
+                perform_action: input_button.press
+                target: {entity_id: input_button.good_night}
+              icon_tap_action:
+                action: perform-action
+                perform_action: input_button.press
+                target: {entity_id: input_button.good_night}
+            - type: markdown
+              title: Coming up
+              content: !file upcoming_card.md
+        # ---- Lights + Blinds: tap toggles, hold for details ----
+        - type: grid
+          cards:
+            - type: heading
+              heading: Lights
+              icon: mdi:lightbulb-group
+            - &light
+              type: tile
+              entity: switch.hall_lights
+              name: Hall
+              icon: mdi:ceiling-light
+              tap_action: {action: toggle}
+              hold_action: {action: more-info}
+              grid_options: {columns: 6}
+            - {<<: *light, entity: switch.kitchen_lights, name: Kitchen, icon: mdi:ceiling-light}
+            - {<<: *light, entity: switch.pendant_light, name: Pendant, icon: mdi:ceiling-light-multiple}
+            - {<<: *light, entity: switch.office_lights, name: Office, icon: mdi:desk-lamp}
+            - {<<: *light, entity: switch.studio_lights, name: Studio, icon: mdi:ceiling-light}
+            - {<<: *light, entity: switch.lounge_photo_frame, name: Photo frame, icon: mdi:image-frame}
+            - {<<: *light, entity: switch.kevin, name: Kevin bed, icon: mdi:lamp}
+            - {<<: *light, entity: switch.libby, name: Libby bed, icon: mdi:lamp}
+            - type: tile
+              entity: light.lounge_led_group
+              name: Lounge LEDs
+              tap_action: {action: toggle}
+              features_position: inline
+              features: [{type: light-brightness}]
+              grid_options: {columns: 12}
+              visibility:
+                - {condition: state, entity: light.lounge_led_group, state_not: unavailable}
+            # Blinds: tap toggles open/closed, hold for position
+            - type: heading
+              heading: Blinds
+              icon: mdi:blinds
+              badges:
+                - type: entity
+                  entity: cover.lounge_blinds_1
+                  name: Open lounge
+                  show_name: true
+                  show_state: false
+                  icon: mdi:arrow-up-box
+                  tap_action:
+                    action: perform-action
+                    perform_action: cover.open_cover
+                    target: &lounge_blinds
+                      entity_id: [cover.lounge_blinds_1, cover.lounge_blinds_2, cover.lounge_blinds_3, cover.lounge_blinds_4]
+                - type: entity
+                  entity: cover.lounge_blinds_1
+                  name: Close lounge
+                  show_name: true
+                  show_state: false
+                  icon: mdi:arrow-down-box
+                  tap_action:
+                    action: perform-action
+                    perform_action: cover.close_cover
+                    target: *lounge_blinds
+            - &blind
+              type: tile
+              entity: cover.lounge_blinds_1
+              name: Lounge 1
+              vertical: true
+              tap_action: {action: toggle}
+              icon_tap_action: {action: toggle}
+              hold_action: {action: more-info}
+              grid_options: {columns: 3}
+            - {<<: *blind, entity: cover.lounge_blinds_2, name: Lounge 2}
+            - {<<: *blind, entity: cover.lounge_blinds_3, name: Lounge 3}
+            - {<<: *blind, entity: cover.lounge_blinds_4, name: Lounge 4}
+            - {<<: *blind, entity: cover.kitchen_blinds, name: Kitchen, vertical: false, grid_options: {columns: 6}}
+            - {<<: *blind, entity: cover.dooya, name: Office, vertical: false, grid_options: {columns: 6}}
+            - {<<: *blind, entity: cover.puzzle_blinds, name: Puzzle, vertical: false, grid_options: {columns: 6}}
+            - {<<: *blind, entity: cover.bedroom_blinds, name: Bedroom, vertical: false, grid_options: {columns: 6}}
+            - {<<: *blind, entity: cover.studio_blinds, name: Studio, vertical: false, grid_options: {columns: 6}}
+            - {<<: *blind, entity: cover.guest_room_blinds, name: Guest, vertical: false, grid_options: {columns: 6}}
+
+        # ---- Climate: fans with speed, AC modes, bathroom + bed ----
+        - type: grid
+          cards:
+            - type: heading
+              heading: Climate
+              icon: mdi:thermostat
+              badges:
+                - type: entity
+                  entity: sensor.ensuite_temp_temperature
+                  name: Charts
+                  show_name: true
+                  show_state: false
+                  icon: mdi:chart-line
+                  tap_action: {action: navigate, navigation_path: '#charts'}
+            - &fan
+              type: tile
+              entity: fan.lounge_fan
+              name: Lounge fan
+              tap_action: {action: toggle}
+              hold_action: {action: more-info}
+              features_position: inline
+              features: [{type: fan-speed}]
+              grid_options: {columns: 12}
+            - {<<: *fan, entity: fan.bedroom_fan, name: Bedroom fan}
+            - {<<: *fan, entity: fan.guest_fan, name: Guest fan}
+            - {<<: *fan, entity: fan.eglo_noosa_without_light, name: Office fan}
+            - &ac
+              type: tile
+              entity: climate.lounge
+              name: Lounge AC
+              features_position: inline
+              features:
+                - type: climate-hvac-modes
+                  hvac_modes: ['off', cool, heat, fan_only]
+              grid_options: {columns: 12}
+            - {<<: *ac, entity: climate.air_conditioner2, name: Bedroom AC}
+            - {<<: *ac, entity: climate.office, name: Office AC}
+            - {<<: *ac, entity: climate.guest, name: Guest AC}
+            - {<<: *light, entity: switch.ensuite_fan, name: Ensuite fan, icon: mdi:fan}
+            - {<<: *light, entity: switch.guest_bathroom_fan, name: Guest bath fan, icon: mdi:fan}
+            - {<<: *light, entity: switch.towel_rail, name: Towel rail, icon: mdi:radiator, grid_options: {columns: 12}}
+            - type: tile
+              entity: timer.kevin_blankie
+              name: Kevin blankie
+              icon: mdi:bed
+              grid_options: {columns: 6}
+            - type: tile
+              entity: timer.libby_blankie
+              name: Libby blankie
+              icon: mdi:bed
+              grid_options: {columns: 6}
+              tap_action:
+                action: perform-action
+                perform_action: timer.start
+                target: {entity_id: timer.libby_blankie}
+              hold_action: {action: more-info}
+
+        # ---- Cameras ----
+        - type: grid
+          column_span: 2
+          cards:
+            - type: heading
+              heading: Cameras
+              icon: mdi:cctv
+            - type: custom:advanced-camera-card
+              grid_options: {columns: full}
+              cameras:
+                - camera_entity: camera.nvt_substream
+                - camera_entity: camera.g6_bullet_high_resolution_channel
+
+        # ---- Garden: watering timers, plant ----
+        - type: grid
+          cards:
+            - type: heading
+              heading: Garden
+              icon: mdi:sprinkler-variant
+            - type: custom:simple-timer-card
+              default_new_timer_duration_mins: '5'
+              show_timer_presets: false
+              entities:
+                - {entity: timer.back_tap_timer, name: Dog grass, keep_timer_visible_when_idle: true}
+                - {entity: timer.back_tap_under_floor_timer, name: Dog under tiles, keep_timer_visible_when_idle: true}
+                - {entity: timer.south_watering_timer, name: South grass, icon: mdi:water-pump, mode: auto, keep_timer_visible_when_idle: true}
+            - type: tile
+              entity: sensor.plantie_frangapani_soil_moisture
+              name: Frangipani soil
+              icon: mdi:flower
+              visibility:
+                - {condition: state, entity: sensor.plantie_frangapani_soil_moisture, state_not: unavailable}
+
+        # ---- Rewards summary (full detail on the Everyday Rewards dashboard) ----
+        - type: grid
+          column_span: 2
+          cards:
+            - type: heading
+              heading: Everyday Rewards
+              icon: mdi:cart-percent
+              tap_action: {action: navigate, navigation_path: /everyday-rewards}
+              badges:
+                - type: entity
+                  entity: sensor.everyday_rewards_kevin_login_status
+                  name: Details
+                  show_name: true
+                  show_state: false
+                  icon: mdi:open-in-app
+                  tap_action: {action: navigate, navigation_path: /everyday-rewards}
+            - type: markdown
+              grid_options: {columns: full}
+              content: !file rewards_summary_card.md
+
+        # ---- Pop-ups (hidden until their #hash is opened) ----
+        - type: grid
+          cards:
+            - type: custom:bubble-card
+              card_type: pop-up
+              hash: '#weather'
+              name: Weather
+              icon: mdi:weather-partly-cloudy
+              cards:
+                - type: custom:weather-chart-card
+                  entity: weather.shell_cove
+                  show_main: true
+                  show_temperature: true
+                  show_current_condition: true
+                  show_attributes: true
+                  show_humidity: true
+                  show_pressure: false
+                  show_wind_direction: true
+                  show_wind_speed: true
+                  show_sun: true
+                  show_wind_gust_speed: true
+                  use_12hour_format: false
+                  icons_size: 25
+                  forecast:
+                    type: daily
+                    precipitation_type: rainfall
+                    show_probability: true
+                    condition_icons: true
+                    round_temp: true
+                    show_wind_forecast: true
+                - type: custom:hourly-weather
+                  entity: weather.shell_cove_hourly
+                  icons: false
+                  show_wind: 'false'
+                  show_date: boundary
+                - type: custom:bom-radar-card
+                  data_source: BoM
+                  zoom_level: 9
+                  center_latitude: -34.59
+                  center_longitude: 150.85
+                - type: entities
+                  title: Sun
+                  entities:
+                    - sensor.sun_next_dawn
+                    - sensor.sun_next_dusk
+                    - sensor.sun_solar_azimuth
+                    - sensor.sun_solar_elevation
+
+            - type: custom:bubble-card
+              card_type: pop-up
+              hash: '#charts'
+              name: Temperature & humidity
+              icon: mdi:chart-line
+              cards:
+                - &chart
+                  type: custom:apexcharts-card
+                  graph_span: 24h
+                  header: {show: true, title: Temperature, show_states: true, colorize_states: true}
+                  all_series_config: {stroke_width: 2}
+                  series:
+                    - {entity: sensor.outside_temp_temperature, name: Outside}
+                    - {entity: sensor.ensuite_temp_temperature, name: Ensuite}
+                    - {entity: sensor.guest_bath_temp_temperature, name: Guest bath}
+                    - {entity: sensor.laundry_temp_temperature, name: Laundry}
+                - <<: *chart
+                  header: {show: true, title: Humidity, show_states: true, colorize_states: true}
+                  series:
+                    - {entity: sensor.outside_temp_humidity, name: Outside}
+                    - {entity: sensor.ensuite_temp_humidity, name: Ensuite}
+                    - {entity: sensor.guest_bath_temp_humidity, name: Guest bath}
+                    - {entity: sensor.laundry_temp_humidity, name: Laundry}
+                - <<: *chart
+                  header: {show: true, title: Humidity change (%/h), show_states: true, colorize_states: true}
+                  series:
+                    - {entity: sensor.outside_humidity_delta, name: Outside}
+                    - {entity: sensor.ensuite_humidity_delta, name: Ensuite}
+                    - {entity: sensor.guest_bath_humidity_delta, name: Guest bath}
+                    - {entity: sensor.laundry_humidity_delta, name: Laundry}
+
+            - type: custom:bubble-card
+              card_type: pop-up
+              hash: '#tv'
+              name: Fire TV
+              icon: mdi:television
+              cards:
+                - type: custom:universal-remote-card
+                  platform: Fire TV
+                  media_player_id: media_player.fire_tv_192_168_5_74
+                  remote_id: remote.fire_tv_192_168_5_74
+                  config_entry_id: 01KVA5HXCNPT2036JXS34TQBSA
+                  rows:
+                    - [back, power, home, menu]
+                    - [touchpad, [volume_buttons]]
+                    - [rewind, previous, play_pause, next, fast_forward]
+                  custom_actions: []
+                - type: grid
+                  columns: 4
+                  square: false
+                  cards:
+                    - &app
+                      type: button
+                      name: Netflix
+                      icon: mdi:netflix
+                      tap_action: &launch
+                        action: perform-action
+                        perform_action: androidtv.adb_command
+                        target: {entity_id: media_player.fire_tv_192_168_5_74}
+                        data: {command: monkey -p com.netflix.ninja -c android.intent.category.LAUNCHER 1}
+                    - {<<: *app, name: Disney+, icon: mdi:star-circle, tap_action: {<<: *launch, data: {command: monkey -p com.disney.disneyplus -c android.intent.category.LAUNCHER 1}}}
+                    - {<<: *app, name: YouTube, icon: mdi:youtube, tap_action: {<<: *launch, data: {command: monkey -p com.amazon.firetv.youtube -c android.intent.category.LAUNCHER 1}}}
+                    - {<<: *app, name: Apple TV, icon: mdi:apple, tap_action: {<<: *launch, data: {command: monkey -p com.apple.atve.amazon.appletv -c android.intent.category.LAUNCHER 1}}}
+                    - {<<: *app, name: Stan, icon: mdi:play-circle, tap_action: {<<: *launch, data: {command: monkey -p au.com.stan.and -c android.intent.category.LAUNCHER 1}}}
+                    - {<<: *app, name: BINGE, icon: mdi:television-play, tap_action: {<<: *launch, data: {command: monkey -p au.com.streamotion.ctv.binge -c android.intent.category.LAUNCHER 1}}}
+                    - {<<: *app, name: ABC iview, icon: mdi:television-classic, tap_action: {<<: *launch, data: {command: monkey -p au.net.abc.iview -c android.intent.category.LAUNCHER 1}}}
+                    - {<<: *app, name: SBS, icon: mdi:television, tap_action: {<<: *launch, data: {command: monkey -p com.sbs.ondemand.tv -c android.intent.category.LAUNCHER 1}}}
+                    - {<<: *app, name: 9Now, icon: mdi:numeric-9-box, tap_action: {<<: *launch, data: {command: monkey -p au.com.ninenow.ctv -c android.intent.category.LAUNCHER 1}}}
+                    - {<<: *app, name: 10 play, icon: mdi:numeric-10-box, tap_action: {<<: *launch, data: {command: monkey -p au.com.tenplay -c android.intent.category.LAUNCHER 1}}}
+                    - {<<: *app, name: 7plus, icon: mdi:numeric-7-box, tap_action: {<<: *launch, data: {command: monkey -p com.swm.live -c android.intent.category.LAUNCHER 1}}}
+                    - {<<: *app, name: Tubi, icon: mdi:play-box-outline, tap_action: {<<: *launch, data: {command: monkey -p com.tubitv.ott -c android.intent.category.LAUNCHER 1}}}
