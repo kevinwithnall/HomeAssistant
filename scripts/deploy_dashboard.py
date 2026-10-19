@@ -9,12 +9,15 @@ Source file layout (see dashboards/tablet2.yaml):
   config:    the Lovelace config (views, ...)
 `!file name.md` anywhere in the YAML is replaced by that file's text, read
 relative to the YAML file, so markdown card bodies can be shared between dashboards.
+`!template {file: name.yaml, vars: {k: v}}` is replaced by that YAML file parsed after
+substituting each ${k}, so one view/card layout can be reused with different entities.
 
 Usage: python3 deploy_dashboard.py path/to/dashboard.yaml
 """
 import asyncio
 import json
 import os
+import string
 import sys
 
 import websockets
@@ -31,7 +34,14 @@ def load_source(path):
         with open(os.path.join(base, loader.construct_scalar(node)), encoding="utf-8") as f:
             return f.read().rstrip("\n")
 
+    def template_tag(loader, node):
+        spec = loader.construct_mapping(node, deep=True)
+        with open(os.path.join(base, spec["file"]), encoding="utf-8") as f:
+            text = string.Template(f.read()).substitute(spec.get("vars", {}))
+        return yaml.safe_load(text)
+
     yaml.SafeLoader.add_constructor("!file", file_tag)
+    yaml.SafeLoader.add_constructor("!template", template_tag)
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
