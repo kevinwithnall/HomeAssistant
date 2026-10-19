@@ -54,8 +54,10 @@ sections:
           **Highlighted:** {{ state_attr(s, 'focused') or '–' }}
           {% set text = state_attr(s, 'screen_text') or [] %}
           {% if text %}**On screen:** {{ text | join(' · ') }}{% endif %}
-          <small>Read {{ relative_time(states[s].last_updated) if states[s] else 'never' }} ago ·
-          paid video shows black (copy protection) but menus and guides drawn over it still show.</small>
+          {% set age = (now() - states[s].last_updated).total_seconds() if states[s] else 99999 %}
+          {% if age > 120 %}<ha-alert alert-type="warning">Read {{ relative_time(states[s].last_updated) if states[s] else 'never' }} ago – turn on Live view or tap Read screen text to refresh.</ha-alert>
+          {% else %}<small>Read {{ relative_time(states[s].last_updated) }} ago</small>{% endif %}
+          <small>Paid video shows black (copy protection) but menus and guides drawn over it still show.</small>
         grid_options: {columns: full}
 
   # ---- Remote ----

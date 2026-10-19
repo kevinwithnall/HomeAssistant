@@ -161,21 +161,25 @@ script:
             au.com.ninenow.ctv: 9Now
             au.com.tenplay: 10 play
             com.tubitv.ott: Tubi
-          # Sessions that are paused (2), playing (3) or buffering (6) and have a title
+          # The most recently updated session that is paused (2), playing (3) or buffering (6) and
+          # has a title. Apps like 7plus leave a stale "buffering" session behind for every channel
+          # change, so only the newest `updated=` (device uptime ms) counts.
           now_playing: >-
-            {% set ns = namespace(pkg='', st=-1, out=[]) %}
+            {% set ns = namespace(pkg='', st=-1, upd=0, best='', best_upd=-1) %}
             {% for l in resp.split('===UI')[0].split('\n') | map('trim') %}
               {% if l.startswith('package=') %}{% set ns.pkg = l[8:] %}{% set ns.st = -1 %}
-              {% elif l.startswith('state=PlaybackState') %}{% set ns.st = l | regex_findall_index('state=(\d+)') | int %}
-              {% elif l.startswith('metadata:') and ns.st in [2, 3, 6] %}
+              {% elif l.startswith('state=PlaybackState') %}
+                {% set ns.st = l | regex_findall_index('state=(\d+)') | int %}
+                {% set ns.upd = l | regex_findall_index('updated=(\d+)') | int(0) %}
+              {% elif l.startswith('metadata:') and ns.st in [2, 3, 6] and ns.upd > ns.best_upd %}
                 {% set title = (l | regex_findall_index('description=(.*)')).split(', ')[0] %}
                 {% if title not in ['', 'null'] %}
-                  {% set item = title ~ ' (' ~ apps.get(ns.pkg, ns.pkg) ~ (', paused' if ns.st == 2 else '') ~ ')' %}
-                  {% if item not in ns.out %}{% set ns.out = ns.out + [item] %}{% endif %}
+                  {% set ns.best = title ~ ' (' ~ apps.get(ns.pkg, ns.pkg) ~ (', paused' if ns.st == 2 else '') ~ ')' %}
+                  {% set ns.best_upd = ns.upd %}
                 {% endif %}
               {% endif %}
             {% endfor %}
-            {{ ns.out | join(' / ') if ns.out else 'Nothing playing' }}
+            {{ ns.best or 'Nothing playing' }}
           # One `focused|text|desc` line per node, parents before children; a focused container
           # without its own label takes the next label below it.
           screen: >-
