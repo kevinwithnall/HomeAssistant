@@ -1,0 +1,114 @@
+# "GGGGTV" dashboard (url /dashboard-ggggtv) - remote help for the in-laws' Fire TV.
+# Screen view (camera.ggggtv_screen, fed by the live-view loop in packages/ggggtv.yaml),
+# remote control and app launchers on one page. App buttons start live view so you see
+# the app open. Deploy with scripts/deploy_dashboard.sh dashboards/ggggtv.yaml
+dashboard:
+  url_path: dashboard-ggggtv
+  title: GGGGTV
+  icon: mdi:television-guide
+  require_admin: false
+  show_in_sidebar: true
+
+config:
+  views:
+    - title: GGGGTV
+      path: tv
+      icon: mdi:television
+      type: sections
+      max_columns: 3
+
+      sections:
+        # ---- What the TV is showing ----
+        - type: grid
+          column_span: 2
+          cards:
+            - type: heading
+              heading: Screen
+              icon: mdi:monitor-eye
+              badges:
+                - type: entity
+                  entity: media_player.fire_tv_192_168_5_74
+                  show_state: true
+                  show_icon: true
+            - type: picture-entity
+              entity: camera.ggggtv_screen
+              camera_view: live
+              show_name: false
+              show_state: false
+              tap_action: {action: more-info}
+              grid_options: {columns: full}
+            - type: tile
+              entity: input_boolean.ggggtv_live
+              name: Live view (stops after 10 min)
+              grid_options: {columns: 6}
+            - type: tile
+              entity: script.ggggtv_screenshot
+              name: Take one screenshot
+              icon: mdi:camera
+              hide_state: true
+              tap_action: {action: perform-action, perform_action: script.ggggtv_screenshot}
+              grid_options: {columns: 3}
+            - type: tile
+              entity: script.ggggtv_screen_info
+              name: Read screen text
+              icon: mdi:text-recognition
+              hide_state: true
+              tap_action: {action: perform-action, perform_action: script.ggggtv_screen_info}
+              grid_options: {columns: 3}
+            # What's playing + on-screen text: readable even when copy protection blanks the picture
+            - type: markdown
+              content: |-
+                {% set s = 'sensor.ggggtv_now_playing' %}
+                **Now playing:** {{ states(s) }}
+                **Highlighted:** {{ state_attr(s, 'focused') or '–' }}
+                {% set text = state_attr(s, 'screen_text') or [] %}
+                {% if text %}**On screen:** {{ text | join(' · ') }}{% endif %}
+                <small>Read {{ relative_time(states[s].last_updated) if states[s] else 'never' }} ago ·
+                paid video shows black (copy protection) but menus and guides drawn over it still show.</small>
+              grid_options: {columns: full}
+
+        # ---- Remote ----
+        - type: grid
+          cards:
+            - type: heading
+              heading: Remote
+              icon: mdi:remote
+            - type: custom:universal-remote-card
+              platform: Fire TV
+              media_player_id: media_player.fire_tv_192_168_5_74
+              remote_id: remote.fire_tv_192_168_5_74
+              config_entry_id: 01KVA5HXCNPT2036JXS34TQBSA
+              rows:
+                - [back, power, home, menu]
+                - [touchpad, [volume_buttons]]
+                - [rewind, previous, play_pause, next, fast_forward]
+              custom_actions: []
+              grid_options: {columns: full}
+
+        # ---- Apps (each launch also turns live view on) ----
+        - type: grid
+          column_span: 3
+          cards:
+            - type: heading
+              heading: Apps
+              icon: mdi:apps
+            - &app
+              type: button
+              name: Netflix
+              icon: mdi:netflix
+              grid_options: {columns: 3, rows: 2}
+              tap_action: &launch
+                action: perform-action
+                perform_action: script.ggggtv_launch_app
+                data: {package: com.netflix.ninja}
+            - {<<: *app, name: Disney+, icon: mdi:star-circle, tap_action: {<<: *launch, data: {package: com.disney.disneyplus}}}
+            - {<<: *app, name: YouTube, icon: mdi:youtube, tap_action: {<<: *launch, data: {package: com.amazon.firetv.youtube}}}
+            - {<<: *app, name: Apple TV, icon: mdi:apple, tap_action: {<<: *launch, data: {package: com.apple.atve.amazon.appletv}}}
+            - {<<: *app, name: Stan, icon: mdi:play-circle, tap_action: {<<: *launch, data: {package: au.com.stan.and}}}
+            - {<<: *app, name: BINGE, icon: mdi:television-play, tap_action: {<<: *launch, data: {package: au.com.streamotion.ctv.binge}}}
+            - {<<: *app, name: ABC iview, icon: mdi:television-classic, tap_action: {<<: *launch, data: {package: au.net.abc.iview}}}
+            - {<<: *app, name: SBS, icon: mdi:television, tap_action: {<<: *launch, data: {package: com.sbs.ondemand.tv}}}
+            - {<<: *app, name: 9Now, icon: mdi:numeric-9-box, tap_action: {<<: *launch, data: {package: au.com.ninenow.ctv}}}
+            - {<<: *app, name: 10 play, icon: mdi:numeric-10-box, tap_action: {<<: *launch, data: {package: au.com.tenplay}}}
+            - {<<: *app, name: 7plus, icon: mdi:numeric-7-box, tap_action: {<<: *launch, data: {package: com.swm.live}}}
+            - {<<: *app, name: Tubi, icon: mdi:play-box-outline, tap_action: {<<: *launch, data: {package: com.tubitv.ott}}}

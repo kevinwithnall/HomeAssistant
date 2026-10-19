@@ -1,0 +1,195 @@
+# ggggtv.yaml - remote help for the in-laws' Fire TV (package).
+#
+# "Live view" grabs a screenshot from the Fire TV over ADB in a loop and shows it on the
+# GGGGTV dashboard (dashboards/ggggtv.yaml):
+#   screencap on the TV -> androidtv.download to /config/www/ggggtv/tmp.png
+#   -> shell_command renames it over screen.png (atomic, so no half-written frames)
+#   -> camera.ggggtv_screen (Local File camera on screen.png) streams it as MJPEG.
+# Expect a frame every ~2.5 s (the TV's own screencap takes ~1.7 s). DRM apps (Netflix, Stan...)
+# capture as black, but app menus/guides drawn over the video still show. Every 3rd frame
+# also reads what's playing + the on-screen text (script.ggggtv_screen_info), which DRM can't hide.
+# Live view switches itself off after 10 minutes so it never runs forever.
+#
+# One-off setup (not YAML): Local File integration -> name "GGGGTV screen",
+# path /config/www/ggggtv/screen.png (needs the file to exist: run script.ggggtv_screenshot first).
+#
+# Master copy: GitHub kevinwithnall/HomeAssistant packages/ggggtv.yaml
+# Deployed to: /config/packages/ggggtv.yaml
+
+input_boolean:
+  ggggtv_live:
+    name: GGGGTV live view
+    icon: mdi:monitor-eye
+
+template:
+  - triggers:
+      - trigger: event
+        event_type: ggggtv_screen_info
+    sensor:
+      - name: GGGGTV now playing
+        unique_id: ggggtv_now_playing
+        icon: mdi:play-box-outline
+        state: "{{ trigger.event.data.now_playing[:255] }}"
+        attributes:
+          focused: "{{ trigger.event.data.focused }}"
+          screen_text: "{{ trigger.event.data.labels }}"
+
+shell_command:
+  ggggtv_publish: mv -f /config/www/ggggtv/tmp.png /config/www/ggggtv/screen.png
+
+script:
+  ggggtv_screenshot:
+    alias: GGGGTV screenshot
+    icon: mdi:camera
+    mode: single
+    max_exceeded: silent
+    sequence:
+      - action: androidtv.adb_command
+        target: {entity_id: media_player.fire_tv_192_168_5_74}
+        data: {command: screencap -p /sdcard/ggggtv.png}
+      - action: androidtv.download
+        target: {entity_id: media_player.fire_tv_192_168_5_74}
+        data:
+          device_path: /sdcard/ggggtv.png
+          local_path: /config/www/ggggtv/tmp.png
+      - action: shell_command.ggggtv_publish
+
+  # What's playing (Android media sessions) and the text on screen (accessibility tree via
+  # uiautomator) - both still readable when DRM blanks the picture. Filtered on the TV so
+  # only `text=`, `content-desc=` and `focused="true"` come back; parsed into sensor.ggggtv_now_playing.
+  ggggtv_screen_info:
+    alias: GGGGTV read screen
+    icon: mdi:text-recognition
+    mode: single
+    max_exceeded: silent
+    sequence:
+      - action: androidtv.adb_command
+        target: {entity_id: media_player.fire_tv_192_168_5_74}
+        data:
+          command: >-
+            dumpsys media_session | grep -E 'package=|state=PlaybackState|description=';
+            echo ===UI; uiautomator dump /dev/tty | grep -oE 'text="[^"]*"|content-desc="[^"]*"|focused="true"'
+      - variables:
+          resp: "{{ state_attr('media_player.fire_tv_192_168_5_74', 'adb_response') or '' }}"
+          apps:
+            com.swm.live: 7plus
+            com.netflix.ninja: Netflix
+            com.disney.disneyplus: Disney+
+            com.amazon.firetv.youtube: YouTube
+            com.apple.atve.amazon.appletv: Apple TV
+            au.com.stan.and: Stan
+            au.com.streamotion.ctv.binge: BINGE
+            au.net.abc.iview: ABC iview
+            com.sbs.ondemand.tv: SBS
+            au.com.ninenow.ctv: 9Now
+            au.com.tenplay: 10 play
+            com.tubitv.ott: Tubi
+          # Sessions that are paused (2), playing (3) or buffering (6) and have a title
+          now_playing: >-
+            {% set ns = namespace(pkg='', st=-1, out=[]) %}
+            {% for l in resp.split('===UI')[0].split('\n') | map('trim') %}
+              {% if l.startswith('package=') %}{% set ns.pkg = l[8:] %}{% set ns.st = -1 %}
+              {% elif l.startswith('state=PlaybackState') %}{% set ns.st = l | regex_findall_index('state=(\d+)') | int %}
+              {% elif l.startswith('metadata:') and ns.st in [2, 3, 6] %}
+                {% set title = (l | regex_findall_index('description=(.*)')).split(', ')[0] %}
+                {% if title not in ['', 'null'] %}
+                  {% set item = title ~ ' (' ~ apps.get(ns.pkg, ns.pkg) ~ (', paused' if ns.st == 2 else '') ~ ')' %}
+                  {% if item not in ns.out %}{% set ns.out = ns.out + [item] %}{% endif %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.out | join(' / ') if ns.out else 'Nothing playing' }}
+          # Each UI node yields text=, content-desc=, then focused="true" if it has focus; a focused
+          # container without its own label takes the next label below it.
+          screen: >-
+            {% set u = namespace(text='', last='', labels=[], focused='', want=false) %}
+            {% for l in (resp.split('===UI')[1] if '===UI' in resp else '').split('\n') | map('trim') %}
+              {% if l.startswith('text="') %}{% set u.text = l[6:-1] %}
+              {% elif l.startswith('content-desc="') %}
+                {% set label = (u.text or l[14:-1]) | replace('&amp;', '&') | replace('&quot;', '"') | replace('&#39;', "'") | replace('&lt;', '<') | replace('&gt;', '>') | trim %}
+                {% set u.last = label %}
+                {% if label %}
+                  {% if u.want %}{% set u.focused = label %}{% set u.want = false %}{% endif %}
+                  {% if label not in u.labels %}{% set u.labels = u.labels + [label] %}{% endif %}
+                {% endif %}
+              {% elif l == 'focused="true"' %}
+                {% if u.last %}{% set u.focused = u.last %}{% else %}{% set u.want = true %}{% endif %}
+              {% endif %}
+            {% endfor %}
+            {{ {'focused': u.focused, 'labels': u.labels[:60]} | to_json }}
+      - event: ggggtv_screen_info
+        event_data:
+          now_playing: "{{ now_playing }}"
+          focused: "{{ (screen if screen is mapping else screen | from_json).focused }}"
+          labels: "{{ (screen if screen is mapping else screen | from_json).labels }}"
+
+  ggggtv_live_loop:
+    alias: GGGGTV live view loop
+    icon: mdi:monitor-eye
+    mode: single
+    max_exceeded: silent
+    sequence:
+      - variables:
+          stop_at: "{{ (now() + timedelta(minutes=10)).isoformat() }}"
+      - repeat:
+          while:
+            - condition: state
+              entity_id: input_boolean.ggggtv_live
+              state: "on"
+            - condition: template
+              value_template: "{{ now() < stop_at | as_datetime }}"
+          sequence:
+            - action: script.ggggtv_screenshot
+              continue_on_error: true
+            # Screen text is slow (~3 s) so refresh it every 3rd frame
+            - if: "{{ repeat.index % 3 == 1 }}"
+              then:
+                - action: script.ggggtv_screen_info
+                  continue_on_error: true
+            # Back off a little if the TV is unreachable so we don't hammer ADB
+            - delay: "{{ '00:00:00.2' if states('media_player.fire_tv_192_168_5_74') not in ['unavailable', 'unknown'] else '00:00:05' }}"
+      - action: input_boolean.turn_off
+        target: {entity_id: input_boolean.ggggtv_live}
+
+  ggggtv_launch_app:
+    alias: GGGGTV launch app
+    icon: mdi:application
+    mode: queued
+    fields:
+      package:
+        name: Package
+        description: Android package name of the app to launch
+        example: com.netflix.ninja
+        required: true
+        selector:
+          text:
+    sequence:
+      - action: androidtv.adb_command
+        target: {entity_id: media_player.fire_tv_192_168_5_74}
+        data: {command: "monkey -p {{ package }} -c android.intent.category.LAUNCHER 1"}
+      - action: input_boolean.turn_on
+        target: {entity_id: input_boolean.ggggtv_live}
+
+automation:
+  - id: ggggtv_live_view
+    alias: GGGGTV live view
+    description: Run the screenshot loop while GGGGTV live view is on (see packages/ggggtv.yaml)
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.ggggtv_live
+        to: "on"
+      # Loop killed (script reload, restart) while live view is still on -> start it again
+      - trigger: state
+        entity_id: script.ggggtv_live_loop
+        to: "off"
+        for: {seconds: 5}
+      - trigger: homeassistant
+        event: start
+    conditions:
+      - condition: state
+        entity_id: input_boolean.ggggtv_live
+        state: "on"
+    actions:
+      - action: script.turn_on
+        target: {entity_id: script.ggggtv_live_loop}
