@@ -43,6 +43,9 @@ template:
         attributes:
           focused: "{{ trigger.event.data.focused }}"
           screen_text: "{{ trigger.event.data.labels }}"
+          # Changes on every read, so last_updated (used for the dashboard's "Read … ago") moves
+          # even when the text is identical
+          read_at: "{{ now().isoformat() }}"
   - triggers:
       - trigger: event
         event_type: ggggtv_screen_info
@@ -55,6 +58,9 @@ template:
         attributes:
           focused: "{{ trigger.event.data.focused }}"
           screen_text: "{{ trigger.event.data.labels }}"
+          # Changes on every read, so last_updated (used for the dashboard's "Read … ago") moves
+          # even when the text is identical
+          read_at: "{{ now().isoformat() }}"
   # Pushed picture: each new frame fires ggggtv_frame, the URL changes, HA re-fetches the camera
   # image and the dashboard reloads it. (The camera's MJPEG live view stalled in the browser.)
   - triggers:
