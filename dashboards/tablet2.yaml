@@ -389,37 +389,10 @@ config:
               name: Fire TV
               icon: mdi:television
               cards:
-                - type: custom:universal-remote-card
-                  platform: Fire TV
-                  media_player_id: media_player.fire_tv_192_168_5_74
-                  remote_id: remote.fire_tv_192_168_5_74
-                  config_entry_id: 01KVA5HXCNPT2036JXS34TQBSA
-                  rows:
-                    - [back, power, home, menu]
-                    - [touchpad, [volume_buttons]]
-                    - [rewind, previous, play_pause, next, fast_forward]
-                  custom_actions: []
-                - type: grid
-                  columns: 4
-                  square: false
-                  cards:
-                    - &app
-                      type: button
-                      name: Netflix
-                      icon: mdi:netflix
-                      tap_action: &launch
-                        action: perform-action
-                        perform_action: androidtv.adb_command
-                        target: {entity_id: media_player.fire_tv_192_168_5_74}
-                        data: {command: monkey -p com.netflix.ninja -c android.intent.category.LAUNCHER 1}
-                    - {<<: *app, name: Disney+, icon: mdi:star-circle, tap_action: {<<: *launch, data: {command: monkey -p com.disney.disneyplus -c android.intent.category.LAUNCHER 1}}}
-                    - {<<: *app, name: YouTube, icon: mdi:youtube, tap_action: {<<: *launch, data: {command: monkey -p com.amazon.firetv.youtube -c android.intent.category.LAUNCHER 1}}}
-                    - {<<: *app, name: Apple TV, icon: mdi:apple, tap_action: {<<: *launch, data: {command: monkey -p com.apple.atve.amazon.appletv -c android.intent.category.LAUNCHER 1}}}
-                    - {<<: *app, name: Stan, icon: mdi:play-circle, tap_action: {<<: *launch, data: {command: monkey -p au.com.stan.and -c android.intent.category.LAUNCHER 1}}}
-                    - {<<: *app, name: BINGE, icon: mdi:television-play, tap_action: {<<: *launch, data: {command: monkey -p au.com.streamotion.ctv.binge -c android.intent.category.LAUNCHER 1}}}
-                    - {<<: *app, name: ABC iview, icon: mdi:television-classic, tap_action: {<<: *launch, data: {command: monkey -p au.net.abc.iview -c android.intent.category.LAUNCHER 1}}}
-                    - {<<: *app, name: SBS, icon: mdi:television, tap_action: {<<: *launch, data: {command: monkey -p com.sbs.ondemand.tv -c android.intent.category.LAUNCHER 1}}}
-                    - {<<: *app, name: 9Now, icon: mdi:numeric-9-box, tap_action: {<<: *launch, data: {command: monkey -p au.com.ninenow.ctv -c android.intent.category.LAUNCHER 1}}}
-                    - {<<: *app, name: 10 play, icon: mdi:numeric-10-box, tap_action: {<<: *launch, data: {command: monkey -p au.com.tenplay -c android.intent.category.LAUNCHER 1}}}
-                    - {<<: *app, name: 7plus, icon: mdi:numeric-7-box, tap_action: {<<: *launch, data: {command: monkey -p com.swm.live -c android.intent.category.LAUNCHER 1}}}
-                    - {<<: *app, name: Tubi, icon: mdi:play-box-outline, tap_action: {<<: *launch, data: {command: monkey -p com.tubitv.ott -c android.intent.category.LAUNCHER 1}}}
+                # Shared with the GGGGTV dashboard (in-laws' Fire TV = tv key ggggtv)
+                - !template
+                  file: firetv_remote.yaml
+                  vars: {tv: ggggtv}
+                - !template
+                  file: firetv_apps.yaml
+                  vars: {tv: ggggtv}

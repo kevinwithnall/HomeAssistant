@@ -1,0 +1,33 @@
+# Fire TV remote as one grid card: Back/Up/Home, Left/OK/Right, Menu/Down/Power, volume, playback.
+# Used via `!template {file: firetv_remote.yaml, vars: {tv: <key>}}` from the GGGGTV tabs
+# (firetv_view.yaml) and the tablet 2 #tv pop-up. Each press -> script.ggggtv_key, which
+# sends an ADB keyevent and turns that TV's live view on. (Replaces universal-remote-card:
+# the remote.fire_tv_* entities it sends to are dead, and its circlepad/touchpad didn't render.)
+type: grid
+columns: 3
+square: false
+grid_options: {columns: full}
+cards:
+  - &key
+    type: button
+    name: Back
+    icon: mdi:arrow-left
+    show_name: true
+    tap_action: &press
+      action: perform-action
+      perform_action: script.ggggtv_key
+      data: {tv: '${tv}', key: back}
+  - {<<: *key, name: Up, icon: mdi:chevron-up, tap_action: {<<: *press, data: {tv: '${tv}', key: up}}}
+  - {<<: *key, name: Home, icon: mdi:home, tap_action: {<<: *press, data: {tv: '${tv}', key: home}}}
+  - {<<: *key, name: Left, icon: mdi:chevron-left, tap_action: {<<: *press, data: {tv: '${tv}', key: left}}}
+  - {<<: *key, name: OK, icon: mdi:circle-medium, tap_action: {<<: *press, data: {tv: '${tv}', key: ok}}}
+  - {<<: *key, name: Right, icon: mdi:chevron-right, tap_action: {<<: *press, data: {tv: '${tv}', key: right}}}
+  - {<<: *key, name: Menu, icon: mdi:menu, tap_action: {<<: *press, data: {tv: '${tv}', key: menu}}}
+  - {<<: *key, name: Down, icon: mdi:chevron-down, tap_action: {<<: *press, data: {tv: '${tv}', key: down}}}
+  - {<<: *key, name: Power, icon: mdi:power, tap_action: {<<: *press, data: {tv: '${tv}', key: power}}}
+  - {<<: *key, name: Vol −, icon: mdi:volume-minus, tap_action: {<<: *press, data: {tv: '${tv}', key: volume_down}}}
+  - {<<: *key, name: Mute, icon: mdi:volume-mute, tap_action: {<<: *press, data: {tv: '${tv}', key: mute}}}
+  - {<<: *key, name: Vol +, icon: mdi:volume-plus, tap_action: {<<: *press, data: {tv: '${tv}', key: volume_up}}}
+  - {<<: *key, name: Rewind, icon: mdi:rewind, tap_action: {<<: *press, data: {tv: '${tv}', key: rewind}}}
+  - {<<: *key, name: Play/Pause, icon: mdi:play-pause, tap_action: {<<: *press, data: {tv: '${tv}', key: play_pause}}}
+  - {<<: *key, name: Forward, icon: mdi:fast-forward, tap_action: {<<: *press, data: {tv: '${tv}', key: fast_forward}}}

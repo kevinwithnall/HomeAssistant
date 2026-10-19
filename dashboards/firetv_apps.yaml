@@ -1,0 +1,26 @@
+# Fire TV app launchers as one grid card. Used via `!template {file: firetv_apps.yaml,
+# vars: {tv: <key>}}`. Each launch -> script.ggggtv_launch_app (also turns live view on).
+type: grid
+columns: 4
+square: false
+grid_options: {columns: full}
+cards:
+  - &app
+    type: button
+    name: Netflix
+    icon: mdi:netflix
+    tap_action: &launch
+      action: perform-action
+      perform_action: script.ggggtv_launch_app
+      data: {tv: '${tv}', package: com.netflix.ninja}
+  - {<<: *app, name: Disney+, icon: mdi:star-circle, tap_action: {<<: *launch, data: {tv: '${tv}', package: com.disney.disneyplus}}}
+  - {<<: *app, name: YouTube, icon: mdi:youtube, tap_action: {<<: *launch, data: {tv: '${tv}', package: com.amazon.firetv.youtube}}}
+  - {<<: *app, name: Apple TV, icon: mdi:apple, tap_action: {<<: *launch, data: {tv: '${tv}', package: com.apple.atve.amazon.appletv}}}
+  - {<<: *app, name: Stan, icon: mdi:play-circle, tap_action: {<<: *launch, data: {tv: '${tv}', package: au.com.stan.and}}}
+  - {<<: *app, name: BINGE, icon: mdi:television-play, tap_action: {<<: *launch, data: {tv: '${tv}', package: au.com.streamotion.ctv.binge}}}
+  - {<<: *app, name: ABC iview, icon: mdi:television-classic, tap_action: {<<: *launch, data: {tv: '${tv}', package: au.net.abc.iview}}}
+  - {<<: *app, name: SBS, icon: mdi:television, tap_action: {<<: *launch, data: {tv: '${tv}', package: com.sbs.ondemand.tv}}}
+  - {<<: *app, name: 9Now, icon: mdi:numeric-9-box, tap_action: {<<: *launch, data: {tv: '${tv}', package: au.com.ninenow.ctv}}}
+  - {<<: *app, name: 10 play, icon: mdi:numeric-10-box, tap_action: {<<: *launch, data: {tv: '${tv}', package: au.com.tenplay}}}
+  - {<<: *app, name: 7plus, icon: mdi:numeric-7-box, tap_action: {<<: *launch, data: {tv: '${tv}', package: com.swm.live}}}
+  - {<<: *app, name: Tubi, icon: mdi:play-box-outline, tap_action: {<<: *launch, data: {tv: '${tv}', package: com.tubitv.ott}}}

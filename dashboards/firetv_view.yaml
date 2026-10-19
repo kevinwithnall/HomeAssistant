@@ -1,0 +1,80 @@
+# One Fire TV's tab on the GGGGTV dashboard: screen view, remote and app launchers.
+# Used via `!template {file: firetv_view.yaml, vars: {...}}` from ggggtv.yaml; the
+# $$-placeholders are filled in per TV. tv is the TV's key in packages/ggggtv.yaml
+# (entity/path prefix).
+title: ${title}
+path: ${path}
+icon: ${icon}
+type: sections
+max_columns: 3
+
+sections:
+  # ---- What the TV is showing ----
+  - type: grid
+    column_span: 2
+    cards:
+      - type: heading
+        heading: Screen
+        icon: mdi:monitor-eye
+        badges:
+          - type: entity
+            entity: ${player}
+            show_state: true
+            show_icon: true
+      # image.<tv>_screen changes on every frame, so the card reloads it (camera live view stalled)
+      - type: picture-entity
+        entity: image.${tv}_screen
+        show_name: false
+        show_state: false
+        tap_action: {action: more-info}
+        grid_options: {columns: full}
+      - type: tile
+        entity: input_boolean.${tv}_live
+        name: Live view (stops after 10 min)
+        grid_options: {columns: 6}
+      - type: tile
+        entity: script.ggggtv_screenshot
+        name: Take one screenshot
+        icon: mdi:camera
+        hide_state: true
+        tap_action: {action: perform-action, perform_action: script.ggggtv_screenshot, data: {tv: '${tv}'}}
+        grid_options: {columns: 3}
+      - type: tile
+        entity: script.ggggtv_screen_info
+        name: Read screen text
+        icon: mdi:text-recognition
+        hide_state: true
+        tap_action: {action: perform-action, perform_action: script.ggggtv_screen_info, data: {tv: '${tv}'}}
+        grid_options: {columns: 3}
+      # What's playing + on-screen text: readable even when copy protection blanks the picture
+      - type: markdown
+        content: |-
+          {% set s = 'sensor.${tv}_now_playing' %}
+          **Now playing:** {{ states(s) }}
+          **Highlighted:** {{ state_attr(s, 'focused') or '–' }}
+          {% set text = state_attr(s, 'screen_text') or [] %}
+          {% if text %}**On screen:** {{ text | join(' · ') }}{% endif %}
+          <small>Read {{ relative_time(states[s].last_updated) if states[s] else 'never' }} ago ·
+          paid video shows black (copy protection) but menus and guides drawn over it still show.</small>
+        grid_options: {columns: full}
+
+  # ---- Remote ----
+  - type: grid
+    cards:
+      - type: heading
+        heading: Remote
+        icon: mdi:remote
+      - !template
+        file: firetv_remote.yaml
+        vars: {tv: '${tv}'}
+
+  # ---- Apps (each launch also turns live view on) ----
+  - type: grid
+    column_span: 3
+    cards:
+      - type: heading
+        heading: Apps
+        icon: mdi:apps
+      - !template
+        file: firetv_apps.yaml
+        vars: {tv: '${tv}'}
