@@ -505,3 +505,21 @@ automation:
             - action: script.ggggtv_health_check
               data: {tv: "{{ repeat.item }}"}
               continue_on_error: true
+
+  # Ping adds its latency sensor only if the TV answered when the entry loaded: reload the entry
+  # once the TV is back so sensor.<tv>_ping_latency reappears.
+  - id: ggggtv_ping_latency_restore
+    alias: GGGGTV ping latency restore
+    description: Reload a TV's Ping entry when it comes back online without its latency sensor (packages/ggggtv.yaml)
+    mode: queued
+    triggers:
+      - trigger: state
+        entity_id: [binary_sensor.ggggtv_ping, binary_sensor.cube_ping]
+        to: "on"
+        for: {seconds: 30}
+    conditions:
+      - condition: template
+        value_template: "{{ states('sensor.' ~ trigger.entity_id.split('.')[1] ~ '_latency') in ['unavailable', 'unknown'] }}"
+    actions:
+      - action: homeassistant.reload_config_entry
+        target: {entity_id: "{{ trigger.entity_id }}"}

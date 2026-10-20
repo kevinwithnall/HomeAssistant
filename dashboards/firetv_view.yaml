@@ -9,6 +9,63 @@ type: sections
 max_columns: 3
 
 sections:
+  # ---- Is the TV answering? (all from HA entities - nothing in the browser talks to the TV) ----
+  - type: grid
+    column_span: 3
+    cards:
+      - type: markdown
+        content: |-
+          {% set ping = states('binary_sensor.${tv}_ping') %}
+          {% set rtt = states('sensor.${tv}_ping_latency') %}
+          {% set adb = states.sensor.${tv}_adb %}
+          {% set up = states('${player}') not in ['unavailable', 'unknown'] %}
+          {% set adb_ok = up and adb is not none and adb.state == 'Responding' %}
+          {% set ms = adb.attributes.latency_ms if adb is not none else none %}
+          {% if ping == 'off' %}<ha-alert alert-type="error" title="Offline">Not answering ping – TV unplugged, off Wi-Fi, or the VPN to it is down.</ha-alert>
+          {% elif adb_ok %}<ha-alert alert-type="success" title="Online">Responding to ADB{{ ' in %d ms' % ms if ms is number else '' }}{{ ' · ping %d ms' % (rtt | float) if rtt | is_number else '' }}</ha-alert>
+          {% elif ping == 'on' %}<ha-alert alert-type="warning" title="Reachable, but ADB isn't answering">Tap Check now. If it stays like this the TV may need a restart (or ADB debugging re-allowed on the TV).</ha-alert>
+          {% else %}<ha-alert alert-type="info" title="Status unknown">Tap Check now.</ha-alert>{% endif %}
+          {% set last_ok = adb.attributes.last_ok if adb is not none else none %}
+          {% set frame = states('image.${tv}_screen') %}
+          <small>Last ADB reply: {{ relative_time(as_datetime(last_ok)) ~ ' ago' if last_ok else 'never' }} · Last picture: {{ relative_time(as_datetime(frame)) ~ ' ago' if as_datetime(frame) else 'none yet' }} · Checked: {{ relative_time(as_datetime(adb.attributes.checked_at)) ~ ' ago' if adb is not none and adb.attributes.checked_at else 'never' }}</small>
+        grid_options: {columns: full}
+      - type: tile
+        entity: binary_sensor.${tv}_ping
+        name: Network (ping)
+        grid_options: {columns: 6}
+      - type: tile
+        entity: sensor.${tv}_ping_latency
+        name: Ping
+        icon: mdi:timer-outline
+        # Ping only creates this sensor while the TV answers, so hide it when offline
+        visibility:
+          - {condition: state, entity: binary_sensor.${tv}_ping, state: 'on'}
+        grid_options: {columns: 6}
+      - type: tile
+        entity: sensor.${tv}_adb
+        name: ADB
+        state_content: [state, latency_ms]
+        grid_options: {columns: 6}
+      - type: tile
+        entity: ${player}
+        name: TV app
+        state_content: [state, app_name]
+        grid_options: {columns: 6}
+      - type: tile
+        entity: image.${tv}_screen
+        name: Last picture
+        icon: mdi:image-outline
+        state_content: last_changed
+        tap_action: {action: none}
+        grid_options: {columns: 6}
+      - type: tile
+        entity: script.ggggtv_health_check
+        name: Check now
+        icon: mdi:refresh
+        hide_state: true
+        tap_action: {action: perform-action, perform_action: script.ggggtv_health_check, data: {tv: '${tv}'}}
+        grid_options: {columns: 6}
+
   # ---- What the TV is showing ----
   - type: grid
     column_span: 2
