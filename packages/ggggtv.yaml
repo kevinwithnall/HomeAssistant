@@ -19,6 +19,17 @@
 # One-off setup per TV (not YAML): Local File integration -> name "<TV> screen", path
 # /config/www/<tv>/screen.jpg (the file must exist: run script.ggggtv_screenshot for it first).
 #
+# Health (per TV, shown at the top of its dashboard tab):
+#   binary_sensor.<tv>_ping + sensor.<tv>_ping_latency - Ping integration (UI config entry, one per
+#     TV IP; entities renamed from binary_sensor.192_168_x_y). Note: Ping only creates its latency
+#     sensors if the host answered when the entry loaded, and they're disabled by default.
+#   sensor.<tv>_adb - does ADB actually answer? script.ggggtv_health_check runs `echo` over ADB
+#     (every 2 min + on ping/player changes + the dashboard's Check now) and fires ggggtv_adb_check;
+#     live-view frames count as proof too. Attributes: latency_ms (ADB round trip), last_ok, checked_at.
+#   image.<tv>_screen's state = time of the last frame.
+# Everything the dashboard shows comes through HA (entities, image proxy, scripts): nothing in
+# the browser talks to the TVs directly, so it works away from home without the VPN.
+#
 # Master copy: GitHub kevinwithnall/HomeAssistant packages/ggggtv.yaml
 # Deployed to: /config/packages/ggggtv.yaml
 
@@ -61,6 +72,78 @@ template:
           # Changes on every read, so last_updated (used for the dashboard's "Read … ago") moves
           # even when the text is identical
           read_at: "{{ now().isoformat() }}"
+  # Does ADB answer? Fed by script.ggggtv_health_check (ggggtv_adb_check) and by live-view
+  # frames / screen reads (proof ADB works). Player going unavailable = ADB connection lost.
+  - triggers:
+      - trigger: event
+        event_type: ggggtv_adb_check
+        event_data: {tv: ggggtv}
+        id: check
+      - trigger: event
+        event_type: ggggtv_frame
+        event_data: {tv: ggggtv}
+        id: frame
+      - trigger: event
+        event_type: ggggtv_screen_info
+        event_data: {tv: ggggtv}
+        id: frame
+      - trigger: state
+        entity_id: media_player.fire_tv_192_168_5_74
+        to: unavailable
+        id: lost
+    variables:
+      player: media_player.fire_tv_192_168_5_74
+      # A frame/screen read only counts while the player is up (the scripts bail out otherwise)
+      ok: >-
+        {{ (trigger.id == 'frame' and states(player) not in ['unavailable', 'unknown'])
+           or (trigger.id == 'check' and trigger.event.data.ok) }}
+    sensor:
+      - name: GGGGTV ADB
+        unique_id: ggggtv_adb
+        icon: mdi:android-debug-bridge
+        state: "{{ 'Responding' if ok else 'Not responding' }}"
+        attributes:
+          latency_ms: >-
+            {{ trigger.event.data.latency_ms if trigger.id == 'check' and ok
+               else (this.attributes.latency_ms if ok else none) }}
+          last_ok: "{{ now().isoformat() if ok else this.attributes.last_ok | default(none) }}"
+          checked_at: "{{ now().isoformat() }}"
+  # Does ADB answer? Fed by script.ggggtv_health_check (ggggtv_adb_check) and by live-view
+  # frames / screen reads (proof ADB works). Player going unavailable = ADB connection lost.
+  - triggers:
+      - trigger: event
+        event_type: ggggtv_adb_check
+        event_data: {tv: cube}
+        id: check
+      - trigger: event
+        event_type: ggggtv_frame
+        event_data: {tv: cube}
+        id: frame
+      - trigger: event
+        event_type: ggggtv_screen_info
+        event_data: {tv: cube}
+        id: frame
+      - trigger: state
+        entity_id: media_player.fire_tv_192_168_4_51
+        to: unavailable
+        id: lost
+    variables:
+      player: media_player.fire_tv_192_168_4_51
+      # A frame/screen read only counts while the player is up (the scripts bail out otherwise)
+      ok: >-
+        {{ (trigger.id == 'frame' and states(player) not in ['unavailable', 'unknown'])
+           or (trigger.id == 'check' and trigger.event.data.ok) }}
+    sensor:
+      - name: Fire Cube ADB
+        unique_id: cube_adb
+        icon: mdi:android-debug-bridge
+        state: "{{ 'Responding' if ok else 'Not responding' }}"
+        attributes:
+          latency_ms: >-
+            {{ trigger.event.data.latency_ms if trigger.id == 'check' and ok
+               else (this.attributes.latency_ms if ok else none) }}
+          last_ok: "{{ now().isoformat() if ok else this.attributes.last_ok | default(none) }}"
+          checked_at: "{{ now().isoformat() }}"
   # Pushed picture: each new frame fires ggggtv_frame, the URL changes, HA re-fetches the camera
   # image and the dashboard reloads it. (The camera's MJPEG live view stalled in the browser.)
   - triggers:
@@ -111,8 +194,9 @@ script:
         cube: media_player.fire_tv_192_168_4_51
       player: "{{ tvs[tv] }}"
     sequence:
+      # ADB down -> HA silently skips the androidtv actions, so stop rather than republish the old frame
       - condition: template
-        value_template: "{{ tv in tvs }}"
+        value_template: "{{ tv in tvs and states(player) not in ['unavailable', 'unknown'] }}"
       - action: androidtv.adb_command
         target: {entity_id: "{{ player }}"}
         data: {command: screencap -p /sdcard/ggggtv.png}
@@ -143,7 +227,7 @@ script:
       player: "{{ tvs[tv] }}"
     sequence:
       - condition: template
-        value_template: "{{ tv in tvs }}"
+        value_template: "{{ tv in tvs and states(player) not in ['unavailable', 'unknown'] }}"
       - action: androidtv.adb_command
         target: {entity_id: "{{ player }}"}
         data:
@@ -206,6 +290,47 @@ script:
           now_playing: "{{ now_playing }}"
           focused: "{{ (screen if screen is mapping else screen | from_json).focused }}"
           labels: "{{ (screen if screen is mapping else screen | from_json).labels }}"
+
+  # Health check: is the TV pingable and does ADB answer? Refreshes the ping + player entities,
+  # then sends `echo <token>` over ADB and times the reply. Result -> ggggtv_adb_check event ->
+  # sensor.<tv>_adb. Skips the ADB echo while live view is getting frames (the frames prove ADB
+  # works, and adb_response is shared with the loop's screen reads).
+  ggggtv_health_check:
+    alias: GGGGTV health check
+    icon: mdi:heart-pulse
+    mode: parallel
+    fields:
+      tv: *tv_field
+    variables:
+      tvs: *tvs
+      player: "{{ tvs[tv] }}"
+    sequence:
+      - condition: template
+        value_template: "{{ tv in tvs }}"
+      - action: homeassistant.update_entity
+        target: {entity_id: ["binary_sensor.{{ tv }}_ping", "{{ player }}"]}
+        continue_on_error: true
+      - if: >-
+          {{ is_state('input_boolean.' ~ tv ~ '_live', 'on')
+             and (now() - states['image.' ~ tv ~ '_screen'].last_changed).total_seconds() < 30
+             if states['image.' ~ tv ~ '_screen'] is not none else false }}
+        then:
+          - stop: Live view is running - its frames show ADB is fine
+      - variables:
+          token: "hc{{ now().timestamp() | int }}"
+          started: "{{ now().timestamp() }}"
+          up: "{{ states(player) not in ['unavailable', 'unknown'] }}"
+      - if: "{{ up }}"
+        then:
+          - action: androidtv.adb_command
+            target: {entity_id: "{{ player }}"}
+            data: {command: "echo {{ token }}"}
+            continue_on_error: true
+      - event: ggggtv_adb_check
+        event_data:
+          tv: "{{ tv }}"
+          ok: "{{ up and (state_attr(player, 'adb_response') or '') | trim == token }}"
+          latency_ms: "{{ ((now().timestamp() - started) * 1000) | round(0) | int }}"
 
   # One loop script per TV (mode single = one loop per TV); they share this sequence.
   ggggtv_live_loop:
@@ -348,3 +473,35 @@ automation:
           sequence:
             - action: script.turn_on
               target: {entity_id: "script.{{ repeat.item }}_live_loop"}
+
+  - id: ggggtv_health_check
+    alias: GGGGTV health check
+    description: Check each Fire TV answers ping + ADB every 2 min and when its connection changes (packages/ggggtv.yaml)
+    mode: parallel
+    triggers:
+      - trigger: time_pattern
+        minutes: /2
+      - trigger: state
+        entity_id: [binary_sensor.ggggtv_ping, media_player.fire_tv_192_168_5_74]
+        to: ~  # state changes only, not attribute updates
+        id: ggggtv
+      - trigger: state
+        entity_id: [binary_sensor.cube_ping, media_player.fire_tv_192_168_4_51]
+        to: ~  # state changes only, not attribute updates
+        id: cube
+      - trigger: homeassistant
+        event: start
+    conditions:
+      # Only connection changes (to/from unavailable or ping flips), not every playback change
+      - condition: template
+        value_template: >-
+          {{ trigger.platform != 'state'
+             or trigger.to_state.domain == 'binary_sensor'
+             or 'unavailable' in [trigger.from_state.state, trigger.to_state.state] }}
+    actions:
+      - repeat:
+          for_each: "{{ [trigger.id] if trigger.id in ['ggggtv', 'cube'] else ['ggggtv', 'cube'] }}"
+          sequence:
+            - action: script.ggggtv_health_check
+              data: {tv: "{{ repeat.item }}"}
+              continue_on_error: true
